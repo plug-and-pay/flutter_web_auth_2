@@ -12,6 +12,7 @@ public class FlutterWebAuth2Plugin: NSObject, FlutterPlugin {
     }
 
     var completionHandler: ((URL?, Error?) -> Void)?
+    var session: Any? // holds ASWebAuthenticationSession or SFAuthenticationSession; promoted to instance property so close() can cancel it
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         if call.method == "authenticate",
@@ -21,17 +22,16 @@ public class FlutterWebAuth2Plugin: NSObject, FlutterPlugin {
            let callbackURLScheme = arguments["callbackUrlScheme"] as? String,
            let options = arguments["options"] as? [String: AnyObject]
         {
-            var sessionToKeepAlive: Any? // if we do not keep the session alive, it will get closed immediately while showing the dialog
             completionHandler = { (url: URL?, err: Error?) in
                 self.completionHandler = nil
 
-                if (sessionToKeepAlive != nil) {
+                if (self.session != nil) {
                     if #available(iOS 12, *) {
-                        (sessionToKeepAlive as! ASWebAuthenticationSession).cancel()
+                        (self.session as! ASWebAuthenticationSession).cancel()
                     } else if #available(iOS 11, *) {
-                        (sessionToKeepAlive as! SFAuthenticationSession).cancel()
+                        (self.session as! SFAuthenticationSession).cancel()
                     }
-                    sessionToKeepAlive = nil
+                    self.session = nil
                 }
 
                 if let err = err {
@@ -141,16 +141,29 @@ public class FlutterWebAuth2Plugin: NSObject, FlutterPlugin {
                 }
 
                 session.start()
-                sessionToKeepAlive = session
+                self.session = session
             } else if #available(iOS 11, *) {
                 let session = SFAuthenticationSession(url: url, callbackURLScheme: callbackURLScheme, completionHandler: completionHandler!)
                 session.start()
-                sessionToKeepAlive = session
+                self.session = session
             } else {
                 result(FlutterError(code: "FAILED", message: "This plugin does currently not support iOS lower than iOS 11", details: nil))
             }
         } else if call.method == "cleanUpDanglingCalls" {
             // we do not keep track of old callbacks on iOS, so nothing to do here
+            result(nil)
+        } else if call.method == "close" {
+            // Cancel the active session if any. The session's completion handler will fire with
+            // ASWebAuthenticationSessionError.canceledLogin (or SFAuthenticationError.canceledLogin)
+            // which the existing completion handler translates into a CANCELED FlutterError on the
+            // pending authenticate() call. The message will be "User canceled login" rather than
+            // "Session closed by app", but the error code is CANCELED either way.
+            if #available(iOS 12, *) {
+                (self.session as? ASWebAuthenticationSession)?.cancel()
+            } else if #available(iOS 11, *) {
+                (self.session as? SFAuthenticationSession)?.cancel()
+            }
+            self.session = nil
             result(nil)
         } else {
             result(FlutterMethodNotImplemented)

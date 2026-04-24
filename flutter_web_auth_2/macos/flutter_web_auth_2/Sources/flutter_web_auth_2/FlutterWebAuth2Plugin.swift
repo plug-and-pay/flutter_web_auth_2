@@ -10,6 +10,8 @@ public class FlutterWebAuth2Plugin: NSObject, FlutterPlugin, ASWebAuthentication
         registrar.addMethodCallDelegate(instance, channel: channel)
     }
 
+    var session: Any? // holds ASWebAuthenticationSession; promoted to instance property so close() can cancel it
+
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         if call.method == "authenticate",
            let arguments = call.arguments as? [String: AnyObject],
@@ -18,9 +20,8 @@ public class FlutterWebAuth2Plugin: NSObject, FlutterPlugin, ASWebAuthentication
            let callbackURLScheme = arguments["callbackUrlScheme"] as? String,
            let options = arguments["options"] as? [String: AnyObject]
         {
-            var sessionToKeepAlive: Any? // if we do not keep the session alive, it will get closed immediately while showing the dialog
             let completionHandler = { (url: URL?, err: Error?) in
-                sessionToKeepAlive = nil
+                self.session = nil
 
                 if let err = err {
                     if case ASWebAuthenticationSessionError.canceledLogin = err {
@@ -68,9 +69,18 @@ public class FlutterWebAuth2Plugin: NSObject, FlutterPlugin, ASWebAuthentication
             session.presentationContextProvider = self
 
             session.start()
-            sessionToKeepAlive = session
+            self.session = session
         } else if call.method == "cleanUpDanglingCalls" {
             // we do not keep track of old callbacks on macOS, so nothing to do here
+            result(nil)
+        } else if call.method == "close" {
+            // Cancel the active session if any. ASWebAuthenticationSession.cancel() fires the
+            // completion handler with ASWebAuthenticationSessionError.canceledLogin, which the
+            // existing completion handler translates into a CANCELED FlutterError on the pending
+            // authenticate() call. The message will be "User canceled login" rather than
+            // "Session closed by app", but the error code is CANCELED either way.
+            (self.session as? ASWebAuthenticationSession)?.cancel()
+            self.session = nil
             result(nil)
         } else {
             result(FlutterMethodNotImplemented)

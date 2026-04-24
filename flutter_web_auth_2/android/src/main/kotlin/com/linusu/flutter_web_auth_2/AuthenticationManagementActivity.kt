@@ -25,6 +25,8 @@ class AuthenticationManagementActivity : ComponentActivity() {
         const val KEY_AUTH_CALLBACK_HOST: String = "authCallbackHost"
         const val KEY_AUTH_CALLBACK_PATH: String = "authCallbackPath"
 
+        var currentActivity: AuthenticationManagementActivity? = null
+
         fun createResponseHandlingIntent(context: Context): Intent {
             val intent = Intent(context, AuthenticationManagementActivity::class.java)
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -46,6 +48,8 @@ class AuthenticationManagementActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        currentActivity = this
+
         // Register the activity result launcher
         authLauncher = AuthTabIntent.registerActivityResultLauncher(this, this::handleAuthResult)
 
@@ -54,6 +58,11 @@ class AuthenticationManagementActivity : ComponentActivity() {
         } else {
             extractState(savedInstanceState)
         }
+    }
+
+    override fun onDestroy() {
+        if (currentActivity === this) currentActivity = null
+        super.onDestroy()
     }
 
     private fun handleAuthResult(result: AuthResult) {

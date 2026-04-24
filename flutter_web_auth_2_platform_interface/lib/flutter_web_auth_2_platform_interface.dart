@@ -55,4 +55,8 @@ abstract class FlutterWebAuth2Platform extends PlatformInterface {
   /// comes the callback will dangle around forever. This can be called to
   /// terminate all `authenticate` calls with an error.
   Future clearAllDanglingCalls() => _instance.clearAllDanglingCalls();
+
+  /// Programmatically dismiss the auth UI. Any pending `authenticate` call
+  /// will complete with a `PlatformException(code: 'CANCELED')`.
+  Future<void> close() => _instance.close();
 }

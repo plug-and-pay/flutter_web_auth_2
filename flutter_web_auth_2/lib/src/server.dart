@@ -12,6 +12,7 @@ import 'package:window_to_front/window_to_front.dart';
 class FlutterWebAuth2ServerPlugin extends FlutterWebAuth2Platform {
   HttpServer? _server;
   Timer? _authTimeout;
+  bool _closedByApp = false;
 
   @override
   Future<String> authenticate({
@@ -33,6 +34,7 @@ class FlutterWebAuth2ServerPlugin extends FlutterWebAuth2Platform {
     }
 
     await _server?.close(force: true);
+    _closedByApp = false;
 
     _server = await HttpServer.bind('127.0.0.1', callbackUri.port);
     String? result;
@@ -61,11 +63,27 @@ class FlutterWebAuth2ServerPlugin extends FlutterWebAuth2Platform {
       await WindowToFront.activate();
       return result!;
     }
+    if (_closedByApp) {
+      _closedByApp = false;
+      throw PlatformException(
+        code: 'CANCELED',
+        message: 'Session closed by app',
+      );
+    }
     throw PlatformException(message: 'User canceled login', code: 'CANCELED');
   }
 
   @override
   Future clearAllDanglingCalls() async {
     await _server?.close(force: true);
+  }
+
+  @override
+  Future<void> close() async {
+    _closedByApp = true;
+    _authTimeout?.cancel();
+    _authTimeout = null;
+    await _server?.close(force: true);
+    _server = null;
   }
 }

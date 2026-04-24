@@ -28,4 +28,12 @@ class FlutterWebAuth2UnsupportedPlugin extends FlutterWebAuth2Platform {
       code: 'UNSUPPORTED',
     );
   }
+
+  @override
+  Future<void> close() async {
+    throw PlatformException(
+      message: 'Platform either unsupported or unrecognised.',
+      code: 'UNSUPPORTED',
+    );
+  }
 }

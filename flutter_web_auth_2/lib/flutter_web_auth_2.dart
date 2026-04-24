@@ -93,4 +93,8 @@ class FlutterWebAuth2 {
     await _platform.clearAllDanglingCalls();
     WidgetsBinding.instance.removeObserver(_resumedObserver);
   }
+
+  /// Programmatically dismiss the auth UI. Any pending `authenticate` call
+  /// will complete with a `PlatformException(code: 'CANCELED')`.
+  static Future<void> close() => _platform.close();
 }

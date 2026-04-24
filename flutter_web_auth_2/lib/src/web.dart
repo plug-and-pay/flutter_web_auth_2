@@ -12,6 +12,13 @@ import 'package:web/web.dart';
 /// Implements the plugin interface using iframes (for silent authentication)
 /// and through an event listener system (for usual authentication).
 class FlutterWebAuth2WebPlugin extends FlutterWebAuth2Platform {
+  Completer<String>? _completer;
+  Timer? _lsTimer;
+  Timer? _responseTimeoutTimer;
+  StreamSubscription? _messageSubscription;
+  HTMLIFrameElement? _authIframe;
+  String? _windowName;
+
   /// Registers the web implementation.
   static void registerWith(Registrar registrar) {
     final channel = MethodChannel(
@@ -35,6 +42,8 @@ class FlutterWebAuth2WebPlugin extends FlutterWebAuth2Platform {
         );
       case 'cleanUpDanglingCalls':
         return clearAllDanglingCalls();
+      case 'close':
+        return close();
       default:
         throw PlatformException(
           code: 'Unimplemented',
@@ -60,10 +69,10 @@ class FlutterWebAuth2WebPlugin extends FlutterWebAuth2Platform {
       document.body?.append(authIframe);
 
       final completer = Completer<String>();
-      StreamSubscription? messageSubscription;
-      Timer? responseTimeoutTimer;
+      _completer = completer;
+      _authIframe = authIframe;
 
-      messageSubscription = window.onMessage.listen((messageEvent) {
+      _messageSubscription = window.onMessage.listen((messageEvent) {
         if (messageEvent.origin ==
             (parsedOptions.debugOrigin ?? Uri.base.origin)) {
           final data = messageEvent.data.dartify();
@@ -71,24 +80,35 @@ class FlutterWebAuth2WebPlugin extends FlutterWebAuth2Platform {
               data != null && data is Map ? data['flutter-web-auth-2'] : null;
           if (authMessage is String) {
             authIframe.remove();
-            completer.complete(authMessage);
-            responseTimeoutTimer?.cancel();
-            messageSubscription?.cancel();
+            _authIframe = null;
+            if (!completer.isCompleted) {
+              completer.complete(authMessage);
+            }
+            _responseTimeoutTimer?.cancel();
+            _responseTimeoutTimer = null;
+            _messageSubscription?.cancel();
+            _messageSubscription = null;
+            _completer = null;
           }
         }
       });
 
       // Add a timeout for the iframe response
-      responseTimeoutTimer =
+      _responseTimeoutTimer =
           Timer(Duration(seconds: parsedOptions.timeout), () {
         authIframe.remove();
-        messageSubscription?.cancel();
-        completer.completeError(
-          PlatformException(
-            code: 'timeout',
-            message: 'Timeout waiting for the iframe response',
-          ),
-        );
+        _authIframe = null;
+        _messageSubscription?.cancel();
+        _messageSubscription = null;
+        if (!completer.isCompleted) {
+          completer.completeError(
+            PlatformException(
+              code: 'timeout',
+              message: 'Timeout waiting for the iframe response',
+            ),
+          );
+        }
+        _completer = null;
       });
 
       return completer.future;
@@ -98,38 +118,48 @@ class FlutterWebAuth2WebPlugin extends FlutterWebAuth2Platform {
       Uri.parse(url),
       webOnlyWindowName: parsedOptions.windowName,
     );
+    _windowName = parsedOptions.windowName;
 
     // Remove the old record if it exists
     const storageKey = 'flutter-web-auth-2';
     window.localStorage.removeItem(storageKey);
-    Timer? lsTimer;
-    StreamSubscription? messageSubscription;
     final completer = Completer<String>();
+    _completer = completer;
     try {
       // Periodically check for the callback value in local storage.
       // If it exists, return it. If not, check the timeout.
       // If the timeout has passed, throw an exception.
-      lsTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      _lsTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
         final flutterWebAuthMessage = window.localStorage.getItem(storageKey);
         if (flutterWebAuthMessage != null) {
-          completer.complete(flutterWebAuthMessage);
+          if (!completer.isCompleted) {
+            completer.complete(flutterWebAuthMessage);
+          }
           window.localStorage.removeItem(storageKey);
-          messageSubscription?.cancel();
+          _messageSubscription?.cancel();
+          _messageSubscription = null;
           timer.cancel();
+          _lsTimer = null;
+          _completer = null;
         } else if (timer.tick >= parsedOptions.timeout) {
-          messageSubscription?.cancel();
+          _messageSubscription?.cancel();
+          _messageSubscription = null;
           timer.cancel();
-          completer.completeError(
-            PlatformException(
-              code: 'error',
-              message: 'Timeout waiting for callback value',
-            ),
-          );
+          _lsTimer = null;
+          if (!completer.isCompleted) {
+            completer.completeError(
+              PlatformException(
+                code: 'error',
+                message: 'Timeout waiting for callback value',
+              ),
+            );
+          }
+          _completer = null;
         }
       });
 
       // Traditional window.opener method of listening for the redirect
-      messageSubscription = window.onMessage.listen(
+      _messageSubscription = window.onMessage.listen(
         (messageEvent) {
           if (messageEvent.origin ==
               (parsedOptions.debugOrigin ?? Uri.base.origin)) {
@@ -137,9 +167,14 @@ class FlutterWebAuth2WebPlugin extends FlutterWebAuth2Platform {
             final flutterWebAuthMessage =
                 data != null && data is Map ? data['flutter-web-auth-2'] : null;
             if (flutterWebAuthMessage is String) {
-              lsTimer?.cancel();
-              messageSubscription?.cancel();
-              completer.complete(flutterWebAuthMessage);
+              _lsTimer?.cancel();
+              _lsTimer = null;
+              _messageSubscription?.cancel();
+              _messageSubscription = null;
+              if (!completer.isCompleted) {
+                completer.complete(flutterWebAuthMessage);
+              }
+              _completer = null;
             }
           }
 
@@ -152,11 +187,16 @@ class FlutterWebAuth2WebPlugin extends FlutterWebAuth2Platform {
                     data['data']['authorization'] as Map<String, dynamic>?;
                 if (appleAuth != null) {
                   final appleAuthQuery = Uri(queryParameters: appleAuth).query;
-                  lsTimer?.cancel();
-                  messageSubscription?.cancel();
-                  completer.complete(
-                    appleOrigin.replace(fragment: appleAuthQuery).toString(),
-                  );
+                  _lsTimer?.cancel();
+                  _lsTimer = null;
+                  _messageSubscription?.cancel();
+                  _messageSubscription = null;
+                  if (!completer.isCompleted) {
+                    completer.complete(
+                      appleOrigin.replace(fragment: appleAuthQuery).toString(),
+                    );
+                  }
+                  _completer = null;
                 }
               }
             } on FormatException {
@@ -165,14 +205,20 @@ class FlutterWebAuth2WebPlugin extends FlutterWebAuth2Platform {
           }
         },
         onError: (error) {
-          lsTimer?.cancel();
-          messageSubscription?.cancel();
+          _lsTimer?.cancel();
+          _lsTimer = null;
+          _messageSubscription?.cancel();
+          _messageSubscription = null;
           throw error;
         },
       );
     } catch (e) {
-      lsTimer?.cancel();
-      completer.completeError(e);
+      _lsTimer?.cancel();
+      _lsTimer = null;
+      if (!completer.isCompleted) {
+        completer.completeError(e);
+      }
+      _completer = null;
     }
 
     return completer.future;
@@ -180,4 +226,41 @@ class FlutterWebAuth2WebPlugin extends FlutterWebAuth2Platform {
 
   @override
   Future<void> clearAllDanglingCalls() async {}
+
+  @override
+  Future<void> close() async {
+    _lsTimer?.cancel();
+    _lsTimer = null;
+    _responseTimeoutTimer?.cancel();
+    _responseTimeoutTimer = null;
+    await _messageSubscription?.cancel();
+    _messageSubscription = null;
+    _authIframe?.remove();
+    _authIframe = null;
+
+    // Best-effort attempt to close a popup we opened via launchUrl. Browsers
+    // generally only allow closing a window that the current script opened
+    // and still holds a reference to; window.open with an existing name may
+    // return a handle we can close.
+    final windowName = _windowName;
+    if (windowName != null && windowName.isNotEmpty) {
+      try {
+        window.open('', windowName)?.close();
+      } catch (_) {
+        // ignore — popup ownership may have been lost
+      }
+    }
+    _windowName = null;
+
+    final completer = _completer;
+    if (completer != null && !completer.isCompleted) {
+      completer.completeError(
+        PlatformException(
+          code: 'CANCELED',
+          message: 'Session closed by app',
+        ),
+      );
+    }
+    _completer = null;
+  }
 }

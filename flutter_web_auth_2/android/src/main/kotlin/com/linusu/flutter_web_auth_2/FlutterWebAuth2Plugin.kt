@@ -66,6 +66,15 @@ class FlutterWebAuth2Plugin(
                 resultCallback.success(null)
             }
 
+            "close" -> {
+                AuthenticationManagementActivity.currentActivity?.finish()
+                callbacks.forEach { (_, danglingResultCallback) ->
+                    danglingResultCallback.error("CANCELED", "Session closed by app", null)
+                }
+                callbacks.clear()
+                resultCallback.success(null)
+            }
+
             else -> resultCallback.notImplemented()
         }
     }

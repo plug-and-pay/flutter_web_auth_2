@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 /// by Windows and Linux).
 class FlutterWebAuth2WebViewPlugin extends FlutterWebAuth2Platform {
   bool _authenticated = false;
+  bool _closedByApp = false;
   Webview? _webview;
 
   @override
@@ -27,6 +28,7 @@ class FlutterWebAuth2WebViewPlugin extends FlutterWebAuth2Platform {
 
     // Reset
     _authenticated = false;
+    _closedByApp = false;
     _webview?.close();
 
     final c = Completer<String>();
@@ -66,9 +68,19 @@ class FlutterWebAuth2WebViewPlugin extends FlutterWebAuth2Platform {
            */
           _webview = null;
           if (!_authenticated) {
-            c.completeError(
-              PlatformException(code: 'CANCELED', message: 'User canceled'),
-            );
+            if (_closedByApp) {
+              _closedByApp = false;
+              c.completeError(
+                PlatformException(
+                  code: 'CANCELED',
+                  message: 'Session closed by app',
+                ),
+              );
+            } else {
+              c.completeError(
+                PlatformException(code: 'CANCELED', message: 'User canceled'),
+              );
+            }
           }
         },
       ),
@@ -79,4 +91,10 @@ class FlutterWebAuth2WebViewPlugin extends FlutterWebAuth2Platform {
 
   @override
   Future<void> clearAllDanglingCalls() async {}
+
+  @override
+  Future<void> close() async {
+    _closedByApp = true;
+    _webview?.close();
+  }
 }

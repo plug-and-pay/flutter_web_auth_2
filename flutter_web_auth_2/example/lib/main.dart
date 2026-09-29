@@ -3,9 +3,9 @@ import 'dart:io' show HttpServer;
 
 import 'package:desktop_webview_window/desktop_webview_window.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:material_ui/material_ui.dart';
 
 const _html = '''
 <!DOCTYPE html>
@@ -100,10 +100,7 @@ class MyAppState extends State<MyApp> {
       req.response.headers.add('Content-Type', 'text/html');
 
       req.response.write(
-        _html.replaceFirst(
-          'CALLBACK_URL_HERE',
-          'foobar://success?code=1337',
-        ),
+        _html.replaceFirst('CALLBACK_URL_HERE', 'foobar://success?code=1337'),
       );
 
       await req.response.close();
@@ -142,25 +139,23 @@ class MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        home: Scaffold(
-          appBar: AppBar(
-            title: const Text('Web Auth 2 example'),
-          ),
-          body: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                Text('Status: $_status\n'),
-                const SizedBox(height: 80),
-                ElevatedButton(
-                  onPressed: () async {
-                    await authenticate();
-                  },
-                  child: const Text('Authenticate'),
-                ),
-              ],
+    home: Scaffold(
+      appBar: AppBar(title: const Text('Web Auth 2 example')),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Text('Status: $_status\n'),
+            const SizedBox(height: 80),
+            ElevatedButton(
+              onPressed: () async {
+                await authenticate();
+              },
+              child: const Text('Authenticate'),
             ),
-          ),
+          ],
         ),
-      );
+      ),
+    ),
+  );
 }

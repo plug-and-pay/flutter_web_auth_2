@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_web_auth_2/src/options.dart';
 import 'package:flutter_web_auth_2/src/platform/platform_is.dart';
 import 'package:flutter_web_auth_2_platform_interface/flutter_web_auth_2_platform_interface.dart';
+import 'package:material_ui/material_ui.dart';
 
 export 'src/options.dart';
 export 'src/unsupported.dart'
@@ -32,7 +32,7 @@ class FlutterWebAuth2 {
       FlutterWebAuth2Platform.instance;
 
   static final _OnAppLifecycleResumeObserver _resumedObserver =
-      _OnAppLifecycleResumeObserver(_cleanUpDanglingCalls);
+      _OnAppLifecycleResumeObserver(_clearAllDanglingCalls);
 
   static void _assertCallbackScheme(String callbackUrlScheme) {
     if ((PlatformIs.web || (!PlatformIs.windows && !PlatformIs.linux)) &&
@@ -89,7 +89,7 @@ class FlutterWebAuth2 {
   /// the result back to the caller of `authenticate`. But if that result never
   /// comes the callback will dangle around forever. This can be called to
   /// terminate all `authenticate` calls with an error.
-  static Future<void> _cleanUpDanglingCalls() async {
+  static Future<void> _clearAllDanglingCalls() async {
     await _platform.clearAllDanglingCalls();
     WidgetsBinding.instance.removeObserver(_resumedObserver);
   }

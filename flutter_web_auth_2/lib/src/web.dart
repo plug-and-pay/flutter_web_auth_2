@@ -40,14 +40,15 @@ class FlutterWebAuth2WebPlugin extends FlutterWebAuth2Platform {
           callbackUrlScheme: '',
           options: call.arguments['options'],
         );
-      case 'cleanUpDanglingCalls':
+      case 'clearAllDanglingCalls':
         return clearAllDanglingCalls();
       case 'close':
         return close();
       default:
         throw PlatformException(
           code: 'Unimplemented',
-          details: "The flutter_web_auth_2 plugin for web doesn't implement "
+          details:
+              "The flutter_web_auth_2 plugin for web doesn't implement "
               "the method '${call.method}'",
         );
     }
@@ -76,8 +77,9 @@ class FlutterWebAuth2WebPlugin extends FlutterWebAuth2Platform {
         if (messageEvent.origin ==
             (parsedOptions.debugOrigin ?? Uri.base.origin)) {
           final data = messageEvent.data.dartify();
-          final authMessage =
-              data != null && data is Map ? data['flutter-web-auth-2'] : null;
+          final authMessage = data != null && data is Map
+              ? data['flutter-web-auth-2']
+              : null;
           if (authMessage is String) {
             authIframe.remove();
             _authIframe = null;
@@ -94,22 +96,24 @@ class FlutterWebAuth2WebPlugin extends FlutterWebAuth2Platform {
       });
 
       // Add a timeout for the iframe response
-      _responseTimeoutTimer =
-          Timer(Duration(seconds: parsedOptions.timeout), () {
-        authIframe.remove();
-        _authIframe = null;
-        _messageSubscription?.cancel();
-        _messageSubscription = null;
-        if (!completer.isCompleted) {
-          completer.completeError(
-            PlatformException(
-              code: 'timeout',
-              message: 'Timeout waiting for the iframe response',
-            ),
-          );
-        }
-        _completer = null;
-      });
+      _responseTimeoutTimer = Timer(
+        Duration(seconds: parsedOptions.timeout),
+        () {
+          authIframe.remove();
+          _authIframe = null;
+          _messageSubscription?.cancel();
+          _messageSubscription = null;
+          if (!completer.isCompleted) {
+            completer.completeError(
+              PlatformException(
+                code: 'timeout',
+                message: 'Timeout waiting for the iframe response',
+              ),
+            );
+          }
+          _completer = null;
+        },
+      );
 
       return completer.future;
     }
@@ -164,8 +168,9 @@ class FlutterWebAuth2WebPlugin extends FlutterWebAuth2Platform {
           if (messageEvent.origin ==
               (parsedOptions.debugOrigin ?? Uri.base.origin)) {
             final data = messageEvent.data.dartify();
-            final flutterWebAuthMessage =
-                data != null && data is Map ? data['flutter-web-auth-2'] : null;
+            final flutterWebAuthMessage = data != null && data is Map
+                ? data['flutter-web-auth-2']
+                : null;
             if (flutterWebAuthMessage is String) {
               _lsTimer?.cancel();
               _lsTimer = null;
@@ -255,10 +260,7 @@ class FlutterWebAuth2WebPlugin extends FlutterWebAuth2Platform {
     final completer = _completer;
     if (completer != null && !completer.isCompleted) {
       completer.completeError(
-        PlatformException(
-          code: 'CANCELED',
-          message: 'Session closed by app',
-        ),
+        PlatformException(code: 'CANCELED', message: 'Session closed by app'),
       );
     }
     _completer = null;

@@ -35,6 +35,7 @@ class AuthenticationManagementActivity : ComponentActivity() {
     }
 
     private var authStarted: Boolean = false
+    private var hasValidState: Boolean = false
     private lateinit var authenticationUri: Uri
     private var intentFlags: Int = 0
     private var targetPackage: String? = null
@@ -98,6 +99,14 @@ class AuthenticationManagementActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
 
+        // If we couldn't restore a valid authentication state (e.g. the app process was
+        // killed while the user was completing authentication in an external browser),
+        // extractState() has already finished this activity. Bail out here instead of
+        // touching the not-yet-initialized fields below.
+        if (!hasValidState) {
+            return
+        }
+
         if (!authStarted) {
 
             val intentBuilder = if (shouldUseAuthTabs()) {
@@ -137,6 +146,16 @@ class AuthenticationManagementActivity : ComponentActivity() {
                 Log.e(LOG_TAG, "Failed to start authentication. No browser available (Activity not found)")
                 val callback = FlutterWebAuth2Plugin.callbacks[callbackScheme]
                 callback?.error("NO_BROWSER", "No valid browser available for authentication.", e.message)
+                FlutterWebAuth2Plugin.callbacks.remove(callbackScheme)
+                finish()
+            } catch (e: SecurityException) {
+                // Some apps register themselves as browsers but do not export their
+                // intent-handling activity; launching the tab then throws instead of
+                // ActivityNotFoundException. Fail the attempt like the no-browser case
+                // rather than crashing the host app.
+                Log.e(LOG_TAG, "Failed to start authentication. Most likely, the selected browser activity is not exported (SecurityException)")
+                val callback = FlutterWebAuth2Plugin.callbacks[callbackScheme]
+                callback?.error("SECURITY_EXCEPTION", "Selected browser cannot be accessed for authentication.", e.message)
                 FlutterWebAuth2Plugin.callbacks.remove(callbackScheme)
                 finish()
             }
@@ -193,18 +212,46 @@ class AuthenticationManagementActivity : ComponentActivity() {
             finish()
             return
         }
-        authStarted = state.getBoolean(KEY_AUTH_STARTED, false)
-        authenticationUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+
+        val scheme = state.getString(KEY_AUTH_CALLBACK_SCHEME)
+        val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             state.getParcelable(KEY_AUTH_URI, Uri::class.java)
         } else {
             @Suppress("deprecation")
             state.getParcelable(KEY_AUTH_URI)
-        } ?: throw IllegalStateException("Authentication URI is null")
+        }
+
+        if (uri == null || scheme == null) {
+            // This can happen when Android recreates this activity from an incomplete
+            // saved-state Bundle after the app's process was killed (e.g. low memory)
+            // while the user was completing authentication in an external browser.
+            // Finish gracefully instead of crashing the host app, and resolve any
+            // still-pending callback with an error so callers don't hang forever.
+            Log.e(
+                LOG_TAG,
+                "Unable to restore authentication state (missing authUri and/or " +
+                    "callbackScheme), likely due to process death. Finishing gracefully"
+            )
+            if (scheme != null) {
+                FlutterWebAuth2Plugin.callbacks[scheme]?.error(
+                    "CANNOT_RESTORE",
+                    "Authentication session was lost, likely because the app was killed in the background. Please try again.",
+                    null
+                )
+                FlutterWebAuth2Plugin.callbacks.remove(scheme)
+            }
+            finish()
+            return
+        }
+
+        authStarted = state.getBoolean(KEY_AUTH_STARTED, false)
+        authenticationUri = uri
         intentFlags = state.getInt(KEY_AUTH_OPTION_INTENT_FLAGS, 0)
         targetPackage = state.getString(KEY_AUTH_OPTION_TARGET_PACKAGE)
         preferEphemeral = state.getBoolean(KEY_AUTH_OPTION_PREFER_EPHEMERAL, false)
-        callbackScheme = state.getString(KEY_AUTH_CALLBACK_SCHEME)!!
+        callbackScheme = scheme
         callbackHost = state.getString(KEY_AUTH_CALLBACK_HOST)
         callbackPath = state.getString(KEY_AUTH_CALLBACK_PATH)
+        hasValidState = true
     }
 }

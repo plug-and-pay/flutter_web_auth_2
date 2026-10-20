@@ -41,14 +41,14 @@ class FlutterWebAuth2WebViewPlugin extends FlutterWebAuth2Platform {
         userDataFolderWindows: (await getTemporaryDirectory()).path,
       ),
     );
-    _webview!.addOnUrlRequestCallback((url) {
+    _webview!.setOnUrlRequestCallback((url) {
       final uri = Uri.parse(url);
       if (uri.scheme != callbackUrlScheme ||
           (parsedOptions.httpsHost != null &&
               uri.host != parsedOptions.httpsHost) ||
           (parsedOptions.httpsPath != null &&
               uri.path != parsedOptions.httpsPath)) {
-        return;
+        return true;
       }
       _authenticated = true;
       _webview?.close();
@@ -58,32 +58,31 @@ class FlutterWebAuth2WebViewPlugin extends FlutterWebAuth2Platform {
        */
       _webview = null;
       c.complete(url);
+      return true;
     });
     unawaited(
-      _webview!.onClose.whenComplete(
-        () {
-          /**
+      _webview!.onClose.whenComplete(() {
+        /**
            * Not setting the webview to null will cause a crash if the
            * application tries to open another webview
            */
-          _webview = null;
-          if (!_authenticated) {
-            if (_closedByApp) {
-              _closedByApp = false;
-              c.completeError(
-                PlatformException(
-                  code: 'CANCELED',
-                  message: 'Session closed by app',
-                ),
-              );
-            } else {
-              c.completeError(
-                PlatformException(code: 'CANCELED', message: 'User canceled'),
-              );
-            }
+        _webview = null;
+        if (!_authenticated) {
+          if (_closedByApp) {
+            _closedByApp = false;
+            c.completeError(
+              PlatformException(
+                code: 'CANCELED',
+                message: 'Session closed by app',
+              ),
+            );
+          } else {
+            c.completeError(
+              PlatformException(code: 'CANCELED', message: 'User canceled'),
+            );
           }
-        },
-      ),
+        }
+      }),
     );
     _webview!.launch(url);
     return c.future;

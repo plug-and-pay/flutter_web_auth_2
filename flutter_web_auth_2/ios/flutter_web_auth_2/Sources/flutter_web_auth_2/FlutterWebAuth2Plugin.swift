@@ -3,16 +3,23 @@ import Flutter
 import SafariServices
 import UIKit
 
-public class FlutterWebAuth2Plugin: NSObject, FlutterPlugin {
+public class FlutterWebAuth2Plugin: NSObject, FlutterPlugin, FlutterSceneLifeCycleDelegate {
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "flutter_web_auth_2", binaryMessenger: registrar.messenger())
-        let instance = FlutterWebAuth2Plugin()
+        let instance = FlutterWebAuth2Plugin(registrar: registrar)
         registrar.addMethodCallDelegate(instance, channel: channel)
         registrar.addApplicationDelegate(instance)
+        registrar.addSceneDelegate(instance)
     }
 
+    private weak var registrar: FlutterPluginRegistrar?
     var completionHandler: ((URL?, Error?) -> Void)?
     var session: Any? // holds ASWebAuthenticationSession or SFAuthenticationSession; promoted to instance property so close() can cancel it
+
+    init(registrar: FlutterPluginRegistrar) {
+        self.registrar = registrar
+        super.init()
+    }
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         if call.method == "authenticate",
@@ -41,11 +48,7 @@ public class FlutterWebAuth2Plugin: NSObject, FlutterPlugin {
                                 FlutterError(
                                     code: "CANCELED",
                                     message: "User canceled login",
-                                    details: [
-                                        "domain": (err as NSError).domain,
-                                        "code": (err as NSError).code,
-                                        "description": err.localizedDescription
-                                   ]
+                                    details: Self.errorDetails(from: err)
                                )
                             )
                             return
@@ -58,18 +61,20 @@ public class FlutterWebAuth2Plugin: NSObject, FlutterPlugin {
                                 FlutterError(
                                     code: "CANCELED",
                                     message: "User canceled login",
-                                    details: [
-                                        "domain": (err as NSError).domain,
-                                        "code": (err as NSError).code,
-                                        "description": err.localizedDescription
-                                   ]
+                                    details: Self.errorDetails(from: err)
                                 )
                             )
                             return
                         }
                     }
 
-                    result(FlutterError(code: "EUNKNOWN", message: err.localizedDescription, details: nil))
+                    result(
+                        FlutterError(
+                            code: "EUNKNOWN",
+                            message: err.localizedDescription,
+                            details: Self.errorDetails(from: err)
+                        )
+                    )
                     return
                 }
 
@@ -105,19 +110,8 @@ public class FlutterWebAuth2Plugin: NSObject, FlutterPlugin {
                 let session = _session!
 
                 if #available(iOS 13, *) {
-                    var rootViewController: UIViewController? = nil
+                    var rootViewController = acquireRootViewController()
 
-                    // FlutterViewController
-                    if (rootViewController == nil) {
-                        rootViewController = UIApplication.shared.delegate?.window??.rootViewController as? FlutterViewController
-                    }
-
-                    // UIViewController
-                    if (rootViewController == nil) {
-                        rootViewController = UIApplication.shared.keyWindow?.rootViewController
-                    }
-
-                    // ACQUIRE_ROOT_VIEW_CONTROLLER_FAILED
                     if (rootViewController == nil) {
                         result(FlutterError.acquireRootViewControllerFailed)
                         return
@@ -149,7 +143,7 @@ public class FlutterWebAuth2Plugin: NSObject, FlutterPlugin {
             } else {
                 result(FlutterError(code: "FAILED", message: "This plugin does currently not support iOS lower than iOS 11", details: nil))
             }
-        } else if call.method == "cleanUpDanglingCalls" {
+        } else if call.method == "clearAllDanglingCalls" {
             // we do not keep track of old callbacks on iOS, so nothing to do here
             result(nil)
         } else if call.method == "close" {
@@ -175,15 +169,52 @@ public class FlutterWebAuth2Plugin: NSObject, FlutterPlugin {
         continue userActivity: NSUserActivity,
         restorationHandler: @escaping ([Any]) -> Void) -> Bool
     {
-        switch userActivity.activityType {
-            case NSUserActivityTypeBrowsingWeb:
-                guard let url = userActivity.webpageURL, let completionHandler = completionHandler else {
-                    return false
-                }
-                completionHandler(url, nil)
-                return true
-            default: return false
+        return handleUserActivity(userActivity)
+    }
+
+    @available(iOS 13.0, *)
+    public func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+        handleUserActivity(userActivity)
+    }
+
+    @discardableResult
+    private func handleUserActivity(_ userActivity: NSUserActivity) -> Bool {
+        guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+              let url = userActivity.webpageURL,
+              let completionHandler = completionHandler else {
+            return false
         }
+        completionHandler(url, nil)
+        return true
+    }
+
+    @available(iOS 13.0, *)
+    private func acquireRootViewController() -> UIViewController? {
+        if let vc = registrar?.viewController {
+            return vc
+        }
+
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first
+        guard let windowScene = scene else { return nil }
+
+        var keyWindow: UIWindow? = nil
+        if #available(iOS 15.0, *) {
+            keyWindow = windowScene.keyWindow
+        }
+        if keyWindow == nil {
+            keyWindow = windowScene.windows.first(where: { $0.isKeyWindow }) ?? windowScene.windows.first
+        }
+        return keyWindow?.rootViewController
+    }
+
+    private static func errorDetails(from err: Error) -> [String: Any] {
+        let nsError = err as NSError
+        return [
+            "domain": nsError.domain,
+            "code": nsError.code,
+            "description": nsError.localizedDescription
+        ]
     }
 }
 
@@ -200,10 +231,22 @@ fileprivate extension FlutterError {
     }
 
     static var invalidHttpsHostError: FlutterError {
-        return FlutterError(code: "INVALID_HTTPS_HOST_ERROR", message: "Failed to retrieve host for https scheme", details: nil)
+        return FlutterError(
+            code: "INVALID_HTTPS_HOST_ERROR",
+            message: "Failed to retrieve host for https scheme",
+            details: [
+                "description": "When callbackUrlScheme is https, options.httpsHost must be provided."
+            ]
+        )
     }
 
     static var invalidHttpsPathError: FlutterError {
-        return FlutterError(code: "INVALID_HTTPS_PATH_ERROR", message: "Failed to retrieve path for https scheme", details: nil)
+        return FlutterError(
+            code: "INVALID_HTTPS_PATH_ERROR",
+            message: "Failed to retrieve path for https scheme",
+            details: [
+                "description": "When callbackUrlScheme is https, options.httpsPath must be provided."
+            ]
+        )
     }
 }
